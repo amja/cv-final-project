@@ -4,6 +4,8 @@ import numpy as np
 import tensorflow as tf
 import hyperparameters as hp
 from lab_funcs import rgb_to_lab
+from sklearn.cluster import KMeans, MiniBatchKMeans
+import pickle
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 class Datasets():
@@ -51,26 +53,45 @@ class Datasets():
 
         # Allocate space in memory for Nx2xXxY ab images
         data_sample = np.zeros(
-            (hp.preprocess_sample_size, 2, hp.img_size, hp.img_size))
+            (hp.preprocess_sample_size, hp.img_size, hp.img_size, 2))
 
         # Import images
         for i, file_path in enumerate(file_list):
             img = tf.io.read_file(file_path)
             # img now in LAB
-            img = self.convert_img(img)
+            img = self.convert_img(img, False)
             # get img to just Ab
-            ab_image = tf.reshape(img[:,:,1:], (2, hp.img_size, hp.img_size)) 
+            ab_image = img[:,:,1:]
             data_sample[i] = ab_image
         
-        # Get Q colors from Nx2xXxY ab images
-        tensor_images = tf.convert_to_tensor(data_sample, dtype=tf.float32)
-        quant_vals = tf.quantization.quantize(tensor_images, min_range=-110, max_range=110,T=tf.qint8)
-        # Get probability dist for each Q color
+        # Reshape to get a list of ab colors 
+        ab_colors_arr = data_sample.reshape((-1,2))
         
-        return quant_vals
+        if not os.path.isfile('kmeans_qcolors.pkl'):
+            kmeans = self.gen_q_cc(ab_colors_arr)
+        else:
+            kmeans = pickle.load(open("kmeans_qcolors.pkl", "rb"))
 
+        # Get Q colors for all training images
+        training_q_colors = kmeans.predict(ab_colors_arr)
+        
+        # tensor_images = tf.convert_to_tensor(data_sample, dtype=tf.float32)
+        # quant_vals = tf.quantization.quantize(tensor_images, min_range=-110, max_range=110,T=tf.qint8)
+        
+        # Get probability dist for each Q color
 
-    
+        
+        return
+
+    ''' From available images generate 313 cluster centers of ab colors'''
+    def gen_q_cc(self, ab_colors):
+        kmeans = KMeans(n_clusters=313,max_iter=500).fit(ab_colors)
+        pickle.dump(kmeans, open("kmeans_qcolors.pkl", "wb"))
+        return kmeans
+
+    def get_img_q_color_from_ab(self, ab_img):
+        
+        return ab_img
     
     def calc_mean_and_std(self):
         # Get list of all images in training directory
