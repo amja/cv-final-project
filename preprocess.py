@@ -20,11 +20,58 @@ class Datasets():
         self.mean = np.zeros((3,))
         self.std = np.ones((3,))
         self.calc_mean_and_std()
-
+        self.get_q_probabilities()
         # Setup data generators
         self.train_data = self.get_data(self.train_path, True)
         self.test_data = self.get_data(self.test_path, False)
 
+    '''
+    This is the first step in getting a loss function that accounts for color rarity.
+    We will have to reweight each pixel based on pixel color rarity. 
+    This function gets the probabilities for each of 313 Q colors.
+    Q colors are the quantized ab values which are "in-gamut" for RGB --
+    (Values are [-110, 110] for CIELAB. For a given L, we break the 
+    CIELAB space into boxes of different colors to make the task 
+    easier (i.e. smaller than 220*220 possible colors).
+    Only some of these are visible in RGB space, so we have 313 left.
+
+    '''
+    def get_q_probabilities(self):
+        # Get list of all images in training directory
+        file_list = []
+        for root, _, files in os.walk(self.train_path):
+            for name in files:
+                file_list.append(os.path.join(root, name))
+
+        # Shuffle filepaths
+        random.shuffle(file_list)
+
+        # Take sample of file paths
+        file_list = file_list[:hp.preprocess_sample_size]
+
+        # Allocate space in memory for Nx2xXxY ab images
+        data_sample = np.zeros(
+            (hp.preprocess_sample_size, 2, hp.img_size, hp.img_size))
+
+        # Import images
+        for i, file_path in enumerate(file_list):
+            img = tf.io.read_file(file_path)
+            # img now in LAB
+            img = self.convert_img(img)
+            # get img to just Ab
+            ab_image = tf.reshape(img[:,:,1:], (2, hp.img_size, hp.img_size)) 
+            data_sample[i] = ab_image
+        
+        # Get Q colors from Nx2xXxY ab images
+        tensor_images = tf.convert_to_tensor(data_sample, dtype=tf.float32)
+        quant_vals = tf.quantization.quantize(tensor_images, min_range=-110, max_range=110,T=tf.qint8)
+        # Get probability dist for each Q color
+        
+        return quant_vals
+
+
+    
+    
     def calc_mean_and_std(self):
         # Get list of all images in training directory
         file_list = []

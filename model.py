@@ -17,7 +17,7 @@ class Model(tf.keras.Model):
             ZeroPadding2D(padding=1),
             Conv2D(filters=64, kernel_size=3, activation='relu'),
             ZeroPadding2D(padding=1),
-            Conv2D(filters=64, kernel_size=3, stride=2, activation='relu'),
+            Conv2D(filters=64, kernel_size=3, strides=2, activation='relu'),
             BatchNormalization(),
 
             # Conv2
@@ -27,7 +27,7 @@ class Model(tf.keras.Model):
             ZeroPadding2D(padding=1),
             Conv2D(filters=128, kernel_size=3, activation='relu'),
             ZeroPadding2D(padding=1),
-            Conv2D(filters=128, kernel_size=3, stride=2, activation='relu'),
+            Conv2D(filters=128, kernel_size=3, strides=2, activation='relu'),
             BatchNormalization(),
 
             # Conv3
@@ -36,7 +36,7 @@ class Model(tf.keras.Model):
             ZeroPadding2D(padding=1),
             Conv2D(filters=256, kernel_size=3, activation='relu'),
             ZeroPadding2D(padding=1),
-            Conv2D(filters=256, kernel_size=3, stride=2, activation='relu'),
+            Conv2D(filters=256, kernel_size=3, strides=2, activation='relu'),
             BatchNormalization(),
 
             # Conv4
@@ -83,7 +83,7 @@ class Model(tf.keras.Model):
             # should have dimension 256 x 64 x 64
             # NEEDS UPSAMPLING -- using transpose, aka Deconvolution
             ZeroPadding2D(padding=1),
-            Conv2DTranspose(filters=256, kernel_size=4, dilation_rate=1, stride=2, activation='relu'),
+            Conv2DTranspose(filters=256, kernel_size=4, dilation_rate=1, strides=2, activation='relu'),
             ZeroPadding2D(padding=1),
             Conv2D(filters=256, kernel_size=3, dilation_rate=1, activation='relu'),
             ZeroPadding2D(padding=1),
@@ -108,6 +108,9 @@ class Model(tf.keras.Model):
 
     @staticmethod
     def loss_fn(truth, prediction):
+        
+        
+        
         return 0
         # return tf.keras.losses.sparse_categorical_crossentropy(
         #     labels, predictions, from_logits=False)
