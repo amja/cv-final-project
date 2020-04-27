@@ -77,7 +77,8 @@ class Datasets():
         file_list = []
         for root, _, files in os.walk(self.train_path):
             for name in files:
-                file_list.append(os.path.join(root, name))
+                if name.endswith("jpg") or name.endswith("jpeg") or name.endswith("png"):
+                    file_list.append(os.path.join(root, name))
 
         # Shuffle filepaths
         random.shuffle(file_list)
@@ -92,7 +93,7 @@ class Datasets():
         # Import images
         for i, file_path in enumerate(file_list):
             img = tf.io.read_file(file_path)
-            img = self.convert_img(img)
+            img = self.convert_img(img, False)
             data_sample[i] = img
 
         self.mean = np.mean(data_sample, axis=(0,1,2))
@@ -109,23 +110,23 @@ class Datasets():
 
     def process_path(self, path):
         img = tf.io.read_file(path)
-        img = self.convert_img(img)
-        return (img[:,:,0], img[:,:,1:3])
+        img = self.convert_img(img, True)
+        return img[:,:,0:1], img[:,:,1:3]
 
-    def convert_img(self, img):
-        img = tf.image.decode_jpeg(img, channels=3)
+    def convert_img(self, img, standardize):
+        img = tf.image.decode_image(img, channels=3, expand_animations=False)
         img = tf.image.convert_image_dtype(img, tf.float32)
         img = tf.image.resize(img, [hp.img_size, hp.img_size])
-        img = self.standardize(img)        
-        return rgb_to_lab(img)
+        img = rgb_to_lab(img)        
+        return self.standardize(img) if standardize else img
 
     def get_data(self, path, shuffle):
         # Approach informed by https://www.tensorflow.org/tutorials/load_data/images
-        imgs = tf.data.Dataset.list_files(path + "/*")
+        imgs = tf.data.Dataset.list_files([path + "/*.jpg", path + "/*.jpeg", path + "/*.png"])
         cnn_ds = imgs.map(self.process_path, num_parallel_calls=AUTOTUNE)
         cnn_ds = cnn_ds.cache("tf_cache")
         cnn_ds = cnn_ds.shuffle(buffer_size=1000)
-        cnn_ds = cnn_ds.repeat()
+        # cnn_ds = cnn_ds.repeat()
         cnn_ds = cnn_ds.batch(hp.batch_size)
         cnn_ds = cnn_ds.prefetch(buffer_size=AUTOTUNE)
         return cnn_ds
