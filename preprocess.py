@@ -73,24 +73,28 @@ class Datasets():
             kmeans = pickle.load(open("kmeans_qcolors.pkl", "rb"))
 
         # Get Q colors for all training images
-        training_q_colors = kmeans.predict(ab_colors_arr)
-        
+        training_ims_q_colors = kmeans.predict(ab_colors_arr[:1000])
+
         # tensor_images = tf.convert_to_tensor(data_sample, dtype=tf.float32)
         # quant_vals = tf.quantization.quantize(tensor_images, min_range=-110, max_range=110,T=tf.qint8)
         
-        # Get probability dist for each Q color
-
+        # Get probability dist for each Q color (v)
+        v = training_ims_q_colors
         
-        return
+        return v
 
     ''' From available images generate 313 cluster centers of ab colors'''
     def gen_q_cc(self, ab_colors):
-        kmeans = KMeans(n_clusters=313,max_iter=500).fit(ab_colors)
+        print('Generating q colors through kmeans!')
+        kmeans = MiniBatchKMeans(n_clusters=313, init_size=313, max_iter=20).fit(ab_colors[:1000])
         pickle.dump(kmeans, open("kmeans_qcolors.pkl", "wb"))
+        print('...Done.')
         return kmeans
 
     def get_img_q_color_from_ab(self, ab_img):
+        kmeans = pickle.load(open("kmeans_qcolors.pkl", "rb"))
         
+        q_colors = kmeans.predict(ab_img)
         return ab_img
     
     def calc_mean_and_std(self):
