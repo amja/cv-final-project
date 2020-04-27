@@ -107,7 +107,7 @@ class Model(tf.keras.Model):
         return img
 
     @staticmethod
-    def loss_fn(labels, predictions):
-        return None
+    def loss_fn(truth, prediction):
+        return 0
         # return tf.keras.losses.sparse_categorical_crossentropy(
         #     labels, predictions, from_logits=False)
