@@ -23,7 +23,7 @@ class Datasets():
         self.mean = np.zeros((3,))
         self.std = np.ones((3,))
         self.calc_mean_and_std()
-        # self.get_q_probabilities()
+        self.quantize_colors()
         # example_img = self.process_path('data/test/cocobackground.jpg', split=False)
         # self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
         # Setup data generators
@@ -41,7 +41,7 @@ class Datasets():
     Only some of these are visible in RGB space, so we have 313 left.
 
     '''
-    def get_q_probabilities(self):
+    def quantize_colors(self):
         # Get list of all images in training directory
         file_list = []
         for root, _, files in os.walk(self.train_path):
@@ -51,12 +51,11 @@ class Datasets():
         # Shuffle filepaths
         random.shuffle(file_list)
 
-        # Take sample of file paths
-        file_list = file_list[:hp.preprocess_sample_size]
+        # Take sample of file paths 
+        file_list = file_list[:500]
 
-        # Allocate space in memory for Nx2xXxY ab images
-        data_sample = np.zeros(
-            (hp.preprocess_sample_size, hp.img_size, hp.img_size, 2))
+        # Randomly choose 1000 ab values from the input images
+        rand_abs = np.zeros((1000, 2))
 
         # Import images
         for i, file_path in enumerate(file_list):
@@ -65,17 +64,19 @@ class Datasets():
             img = self.convert_img(img, False)
             # get img to just Ab
             ab_image = self.lab_img_to_ab(img)
-            data_sample[i] = ab_image
-        
-        # Reshape to get a list of ab colors 
-        ab_colors_arr = data_sample.reshape((-1,2))
+            # pick two random pixels
+            rand_abs[i*2] = ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy()
+            rand_abs[i*2+1] = ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy()
+            
         
         if not os.path.isfile('qcolors_cc.pkl'):
-            kmeans = self.gen_q_cc(ab_colors_arr)
+            # Q colors are the cluster centers 
+            cc = self.gen_q_cc(rand_abs)
         else:
-            kmeans = pickle.load(open("qcolors_cc.pkl", "rb"))
+            cc = pickle.load(open("qcolors_cc.pkl", "rb"))
 
         # Get Q colors for all training images
+        # v: get empirical probability of colors in the quantized ab space
         # training_ims_q_colors = kmeans.predict(ab_colors_arr[:1000])
 
         # tensor_images = tf.convert_to_tensor(data_sample, dtype=tf.float32)
@@ -83,14 +84,12 @@ class Datasets():
         
         # Get probability dist for each Q color (v)
         # v = training_ims_q_colors
-        v = 5
-        
-        return v
+        return cc
 
     ''' From available images generate 313 cluster centers of ab colors'''
     def gen_q_cc(self, ab_colors):
         print('Generating q colors through kmeans!')
-        kmeans = MiniBatchKMeans(n_clusters=313, init_size=313, max_iter=20).fit(ab_colors[:1000])
+        kmeans = MiniBatchKMeans(n_clusters=313, init_size=313, max_iter=100).fit(ab_colors)
         pickle.dump(kmeans.cluster_centers_, open("qcolors_cc.pkl", "wb"))
         print('...Done.')
         return kmeans
@@ -132,6 +131,7 @@ class Datasets():
     Then upscale from 58x58x2 to 224 x 224
     ''' 
     def get_img_ab_from_q_color(self, q_img):
+        # NOT DONE YET
         return q_img
     
     def calc_mean_and_std(self):
