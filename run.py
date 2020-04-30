@@ -28,5 +28,5 @@ def main():
         loss=model.loss_fn,
         metrics=["accuracy"])
     
-    train(model, datasets)
+    # train(model, datasets)
 main()

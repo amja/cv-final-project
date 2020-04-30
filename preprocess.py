@@ -23,6 +23,8 @@ class Datasets():
         self.std = np.ones((3,))
         self.calc_mean_and_std()
         self.get_q_probabilities()
+        example_img = self.process_path('data/test/cocobackground.jpg', split=False)
+        self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
         # Setup data generators
         self.train_data = self.get_data(self.train_path, True)
         self.test_data = self.get_data(self.test_path, False)
@@ -61,7 +63,7 @@ class Datasets():
             # img now in LAB
             img = self.convert_img(img, False)
             # get img to just Ab
-            ab_image = img[:,:,1:]
+            ab_image = self.lab_img_to_ab(img)
             data_sample[i] = ab_image
         
         # Reshape to get a list of ab colors 
@@ -91,11 +93,24 @@ class Datasets():
         print('...Done.')
         return kmeans
 
+    '''
+    Goes from Y to Z
+    This gets Z, i.e. the true Q distribution for each pixel from a color image'''
     def get_img_q_color_from_ab(self, ab_img):
         kmeans = pickle.load(open("kmeans_qcolors.pkl", "rb"))
-        
+        # this is the index of the closest
         q_colors = kmeans.predict(ab_img)
+        # make out of 313
         return ab_img
+
+    '''
+    Goes from Z hat to Y hat
+    Gets the annealed mean or mode.
+    See https://github.com/richzhang/colorization/blob/815b3f7808f8f2d9d683e9ed6c5b0a39bec232fb/colorization/demo/colorization_demo_v2.ipynb
+    Then upscale from 64x64 to 224 x 224
+    ''' 
+    def get_img_ab_from_q_color(self, q_img):
+        return q_img
     
     def calc_mean_and_std(self):
         # Get list of all images in training directory
@@ -133,10 +148,10 @@ class Datasets():
     def standardize(self, img):
         return (img - self.mean) / self.std
 
-    def process_path(self, path):
+    def process_path(self, path, split=True):
         img = tf.io.read_file(path)
         img = self.convert_img(img, True)
-        return img[:,:,0:1], img[:,:,1:3]
+        return img[:,:,0:1], img[:,:,1:3] if split else img
 
     def convert_img(self, img, standardize):
         img = tf.image.decode_image(img, channels=3, expand_animations=False)
@@ -145,6 +160,9 @@ class Datasets():
         img = rgb_to_lab(img)        
         return self.standardize(img) if standardize else img
 
+    def lab_img_to_ab(self, lab_img):
+        return lab_img[:,:,1:]
+    
     def get_data(self, path, shuffle):
         # Approach informed by https://www.tensorflow.org/tutorials/load_data/images
         imgs = tf.data.Dataset.list_files([path + "/*.jpg", path + "/*.jpeg", path + "/*.png"])
