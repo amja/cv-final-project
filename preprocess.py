@@ -6,6 +6,7 @@ import hyperparameters as hp
 from lab_funcs import rgb_to_lab
 from sklearn.cluster import KMeans, MiniBatchKMeans
 import pickle
+from sklearn.neighbors import NearestNeighbors
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 class Datasets():
@@ -22,9 +23,9 @@ class Datasets():
         self.mean = np.zeros((3,))
         self.std = np.ones((3,))
         self.calc_mean_and_std()
-        self.get_q_probabilities()
-        example_img = self.process_path('data/test/cocobackground.jpg', split=False)
-        self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
+        # self.get_q_probabilities()
+        # example_img = self.process_path('data/test/cocobackground.jpg', split=False)
+        # self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
         # Setup data generators
         self.train_data = self.get_data(self.train_path, True)
         self.test_data = self.get_data(self.test_path, False)
@@ -69,19 +70,20 @@ class Datasets():
         # Reshape to get a list of ab colors 
         ab_colors_arr = data_sample.reshape((-1,2))
         
-        if not os.path.isfile('kmeans_qcolors.pkl'):
+        if not os.path.isfile('qcolors_cc.pkl'):
             kmeans = self.gen_q_cc(ab_colors_arr)
         else:
-            kmeans = pickle.load(open("kmeans_qcolors.pkl", "rb"))
+            kmeans = pickle.load(open("qcolors_cc.pkl", "rb"))
 
         # Get Q colors for all training images
-        training_ims_q_colors = kmeans.predict(ab_colors_arr[:1000])
+        # training_ims_q_colors = kmeans.predict(ab_colors_arr[:1000])
 
         # tensor_images = tf.convert_to_tensor(data_sample, dtype=tf.float32)
         # quant_vals = tf.quantization.quantize(tensor_images, min_range=-110, max_range=110,T=tf.qint8)
         
         # Get probability dist for each Q color (v)
-        v = training_ims_q_colors
+        # v = training_ims_q_colors
+        v = 5
         
         return v
 
@@ -89,25 +91,45 @@ class Datasets():
     def gen_q_cc(self, ab_colors):
         print('Generating q colors through kmeans!')
         kmeans = MiniBatchKMeans(n_clusters=313, init_size=313, max_iter=20).fit(ab_colors[:1000])
-        pickle.dump(kmeans, open("kmeans_qcolors.pkl", "wb"))
+        pickle.dump(kmeans.cluster_centers_, open("qcolors_cc.pkl", "wb"))
         print('...Done.')
         return kmeans
 
     '''
-    Goes from Y to Z
-    This gets Z, i.e. the true Q distribution for each pixel from a color image'''
+    Goes from Y (224 x 224 x 2) to almost Z (224 x 224 x 313)
+    Z is meant to be 56 x 56 x 313
+    This gets Z, i.e. the true Q distribution, for each pixel from Y, an ab color image'''
     def get_img_q_color_from_ab(self, ab_img):
-        kmeans = pickle.load(open("kmeans_qcolors.pkl", "rb"))
+        cc = pickle.load(open("qcolors_cc.pkl", "rb"))
         # this is the index of the closest
-        q_colors = kmeans.predict(ab_img)
+        abs_reshaped = tf.reshape(ab_img, (-1,2))
+        neigh = NearestNeighbors(n_neighbors=5).fit(cc)
+        dists, closest_qs = neigh.kneighbors(abs_reshaped, 5)
+        # dists_r = dists.reshape((hp.img_size, hp.img_size, 5))
+        # weight the dists using Gaussian kernel sigma = 5
+        # got these 2 lines from /colorization/resources/caffe_traininglayers.py
+        wts = np.exp(-dists**2/(2*5**2))
+        wts = wts/np.sum(wts,axis=1)[:,np.newaxis]
+
+        
+        # closest_qs_r = closest_qs.reshape((hp.img_size, hp.img_size, 5))
+        q_colors = np.zeros((hp.img_size, hp.img_size, 313))
+
+
+        ind1 = np.repeat(np.indices((hp.img_size, hp.img_size))[0], 5).astype(int)
+        ind2 = np.repeat(np.indices((hp.img_size, hp.img_size))[1], 5).astype(int)
+        ind3 = closest_qs.flatten().astype(int)
+        indices = (ind1, ind2, ind3)
+        np.add.at(q_colors, indices, wts.flatten())
+        # q_colors.reshape((hp.img_size, hp.img_size, 1))
         # make out of 313
-        return ab_img
+        return q_colors
 
     '''
-    Goes from Z hat to Y hat
+    Goes from Z hat (58x58x313) to Y hat (58x58x2)
     Gets the annealed mean or mode.
     See https://github.com/richzhang/colorization/blob/815b3f7808f8f2d9d683e9ed6c5b0a39bec232fb/colorization/demo/colorization_demo_v2.ipynb
-    Then upscale from 64x64 to 224 x 224
+    Then upscale from 58x58x2 to 224 x 224
     ''' 
     def get_img_ab_from_q_color(self, q_img):
         return q_img
@@ -151,7 +173,10 @@ class Datasets():
     def process_path(self, path, split=True):
         img = tf.io.read_file(path)
         img = self.convert_img(img, True)
-        return img[:,:,0:1], img[:,:,1:3] if split else img
+        if split:
+            return img[:,:,0:1], img[:,:,1:3]
+        else:
+            return img
 
     def convert_img(self, img, standardize):
         img = tf.image.decode_image(img, channels=3, expand_animations=False)
