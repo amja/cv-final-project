@@ -8,4 +8,5 @@ num_epochs = 50
 steps_per_epoch = 150
 batch_size = 10
 learning_rate = 3.16e-5
-momentum = 0.9
+beta_1 = 0.9
+beta_2 = 0.99

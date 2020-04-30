@@ -24,8 +24,7 @@ class Datasets():
         self.std = np.ones((3,))
         self.calc_mean_and_std()
         self.quantize_colors()
-        # example_img = self.process_path('data/test/cocobackground.jpg', split=False)
-        # self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
+        
         # Setup data generators
         self.train_data = self.get_data(self.train_path, True)
         self.test_data = self.get_data(self.test_path, False)
@@ -46,7 +45,8 @@ class Datasets():
         file_list = []
         for root, _, files in os.walk(self.train_path):
             for name in files:
-                file_list.append(os.path.join(root, name))
+                if name.endswith("jpg") or name.endswith("jpeg") or name.endswith("png"):
+                    file_list.append(os.path.join(root, name))
 
         # Shuffle filepaths
         random.shuffle(file_list)
@@ -61,7 +61,7 @@ class Datasets():
         for i, file_path in enumerate(file_list):
             img = tf.io.read_file(file_path)
             # img now in LAB
-            img = self.convert_img(img, False)
+            img = self.convert_img(img)
             # get img to just Ab
             ab_image = self.lab_img_to_ab(img)
             # pick two random pixels
@@ -154,8 +154,7 @@ class Datasets():
 
         # Import images
         for i, file_path in enumerate(file_list):
-            img = tf.io.read_file(file_path)
-            img = self.convert_img(img, False)
+            img = self.process_path(file_path, False)
             data_sample[i] = img
 
         self.mean = np.mean(data_sample, axis=(0,1,2))
@@ -173,12 +172,9 @@ class Datasets():
     def process_path(self, path, split=True):
         img = tf.io.read_file(path)
         img = self.convert_img(img, True)
-        if split:
-            return img[:,:,0:1], img[:,:,1:3]
-        else:
-            return img
+        return (img[:,:,0:1], img[:,:,1:3]) if split else img
 
-    def convert_img(self, img, standardize):
+    def convert_img(self, img, standardize=False):
         img = tf.image.decode_image(img, channels=3, expand_animations=False)
         img = tf.image.convert_image_dtype(img, tf.float32)
         img = tf.image.resize(img, [hp.img_size, hp.img_size])
