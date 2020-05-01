@@ -1,7 +1,7 @@
 # For resizing input images
 img_size = 224
 preprocess_sample_size = 400
-
+n_neighbours = 5
 # Training parameters
 
 num_epochs = 50

@@ -2,11 +2,12 @@ import os
 import random
 import numpy as np
 import tensorflow as tf
+from tensorflow import int64
 import hyperparameters as hp
 from lab_funcs import rgb_to_lab
 from sklearn.cluster import KMeans, MiniBatchKMeans
 import pickle
-from sklearn.neighbors import NearestNeighbors
+# from sklearn.neighbors import NearestNeighbors
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 class Datasets():
@@ -16,6 +17,7 @@ class Datasets():
     """
 
     def __init__(self, data_path):
+        self.q_init = False
         self.train_path = os.path.join(data_path, "train")
         self.test_path = os.path.join(data_path, "test")
 
@@ -24,7 +26,7 @@ class Datasets():
         self.std = np.ones((3,))
         self.calc_mean_and_std()
         self.quantize_colors()
-        
+
         # Setup data generators
         self.train_data = self.get_data(self.train_path, True)
         self.test_data = self.get_data(self.test_path, False)
@@ -95,35 +97,31 @@ class Datasets():
         return kmeans
 
     '''
-    Goes from Y (224 x 224 x 2) to almost Z (224 x 224 x 313)
-    Z is meant to be 56 x 56 x 313
+    Goes from Y (224 x 224 x 2) to Z (56 x 56 x 313)
     This gets Z, i.e. the true Q distribution, for each pixel from Y, an ab color image'''
     def get_img_q_color_from_ab(self, ab_img):
-        cc = pickle.load(open("qcolors_cc.pkl", "rb"))
+        if not self.q_init:
+            print("get_img_q_color_from_ab: Q conversion not initialised")
+            exit(1)
+
         # this is the index of the closest
-        abs_reshaped = tf.reshape(ab_img, (-1,2))
-        neigh = NearestNeighbors(n_neighbors=5).fit(cc)
-        dists, closest_qs = neigh.kneighbors(abs_reshaped, 5)
-        # dists_r = dists.reshape((hp.img_size, hp.img_size, 5))
+        abs_reshaped = tf.reshape(ab_img[::4, ::4, :], (-1,2))
+        dists, closest_qs = self.nearest_neighbours(abs_reshaped, self.cc, hp.n_neighbours);
+
         # weight the dists using Gaussian kernel sigma = 5
         # got these 2 lines from /colorization/resources/caffe_traininglayers.py
-        wts = np.exp(-dists**2/(2*5**2))
-        wts = wts/np.sum(wts,axis=1)[:,np.newaxis]
+        wts = tf.exp(-dists**2/(2*5**2))
+        wts = wts/tf.math.reduce_sum(wts,axis=1)[:,tf.newaxis]
+        print("SHAPE: {}".format(tf.reshape(closest_qs, [-1, 1]).shape))
+        print("indices: {}".format(self.q_indices.shape))
+        indices = tf.concat([self.q_indices, tf.reshape(closest_qs, [-1, 1])], axis=1)
+    
+        # Add weights to appropriate positions
+        return tf.tensor_scatter_nd_add(
+            tf.zeros((abs_reshaped.shape[0], 313)), indices, tf.reshape(wts, [-1]))
 
-        
-        # closest_qs_r = closest_qs.reshape((hp.img_size, hp.img_size, 5))
-        q_colors = np.zeros((hp.img_size, hp.img_size, 313))
-
-
-        ind1 = np.repeat(np.indices((hp.img_size, hp.img_size))[0], 5).astype(int)
-        ind2 = np.repeat(np.indices((hp.img_size, hp.img_size))[1], 5).astype(int)
-        ind3 = closest_qs.flatten().astype(int)
-        indices = (ind1, ind2, ind3)
-        np.add.at(q_colors, indices, wts.flatten())
-        # q_colors.reshape((hp.img_size, hp.img_size, 1))
-        # make out of 313
-        return q_colors
-
+    def nearest_neighbours(self, points, centers, k):
+        return tf.ones((points.shape[0], k)), tf.ones((points.shape[0], k), int64)
     '''
     Goes from Z hat (58x58x313) to Y hat (58x58x2)
     Gets the annealed mean or mode.
@@ -154,7 +152,7 @@ class Datasets():
 
         # Import images
         for i, file_path in enumerate(file_list):
-            img = self.process_path(file_path, False)
+            img = self.process_path(file_path, False, quantise=False)
             data_sample[i] = img
 
         self.mean = np.mean(data_sample, axis=(0,1,2))
@@ -169,10 +167,14 @@ class Datasets():
     def standardize(self, img):
         return (img - self.mean) / self.std
 
-    def process_path(self, path, split=True):
+    def process_path(self, path, split=True, quantise=True):
         img = tf.io.read_file(path)
         img = self.convert_img(img, True)
-        return (img[:,:,0:1], img[:,:,1:3]) if split else img
+        if split:
+            # Gets Q colours downsized if required.
+            return (img[:,:,0:1], self.get_img_q_color_from_ab(img[:,:,1:3]) if quantise else img[:,:,1:3])
+        else:
+            return img
 
     def convert_img(self, img, standardize=False):
         img = tf.image.decode_image(img, channels=3, expand_animations=False)
@@ -184,12 +186,23 @@ class Datasets():
     def lab_img_to_ab(self, lab_img):
         return lab_img[:,:,1:]
     
+    def init_q_conversion(self):
+        if not self.q_init:
+            assert(hp.img_size % 4 == 0)
+            scaled_size = hp.img_size // 4
+            self.q_indices = tf.repeat(
+                tf.reshape(tf.range(scaled_size ** 2, dtype=int64), [-1, 1]), hp.n_neighbours, axis=0)
+            self.cc = pickle.load(open("qcolors_cc.pkl", "rb"))
+            self.q_init = True
+
     def get_data(self, path, shuffle):
         # Approach informed by https://www.tensorflow.org/tutorials/load_data/images
         imgs = tf.data.Dataset.list_files([path + "/*.jpg", path + "/*.jpeg", path + "/*.png"])
+        self.init_q_conversion()
         cnn_ds = imgs.map(self.process_path, num_parallel_calls=AUTOTUNE)
         cnn_ds = cnn_ds.cache("tf_cache")
-        cnn_ds = cnn_ds.shuffle(buffer_size=1000)
+        if shuffle:
+            cnn_ds = cnn_ds.shuffle(buffer_size=1000)
         # cnn_ds = cnn_ds.repeat()
         cnn_ds = cnn_ds.batch(hp.batch_size)
         cnn_ds = cnn_ds.prefetch(buffer_size=AUTOTUNE)

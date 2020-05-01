@@ -2,7 +2,7 @@ import tensorflow as tf
 import hyperparameters as hp
 from tensorflow.keras.layers import \
         Conv2D, Cropping2D, MaxPool2D, Dropout, Flatten, Dense, ZeroPadding2D, \
-        BatchNormalization, Conv2DTranspose, Softmax
+        BatchNormalization, Conv2DTranspose, Reshape, Softmax
 
 class Model(tf.keras.Model):
     def __init__(self):
@@ -100,7 +100,8 @@ class Model(tf.keras.Model):
             # SOFTMAX
             # alternatively activation=tf.nn.softmax
             # if we can figure out from rebalance layer
-            Softmax()
+            Softmax(),
+            Reshape((56 ** 2, 313))
         ]
     
     def call(self, img):
@@ -110,6 +111,7 @@ class Model(tf.keras.Model):
 
     @staticmethod
     def loss_fn(truth, prediction):
-        return 0.0
-        # return tf.keras.losses.sparse_categorical_crossentropy(
-        #     labels, predictions, from_logits=False)
+        # print("SHAPE: {}".format(truth.shape))
+        # print("Predict SHAPE: {}".format(prediction.shape))
+        return tf.keras.losses.categorical_crossentropy(
+            truth, prediction, from_logits=False)

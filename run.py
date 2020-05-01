@@ -3,6 +3,7 @@ import tensorflow as tf
 from model import Model
 from preprocess import Datasets
 import hyperparameters as hp
+from functools import partial
 
 def train(model, dataset):
     model.fit(
@@ -25,8 +26,7 @@ def main():
 
     model.compile(
         optimizer=model.optimizer,
-        loss=model.loss_fn,
-        metrics=["accuracy"])
+        loss=model.loss_fn)
     
-    # train(model, datasets)
+    train(model, datasets)
 main()
