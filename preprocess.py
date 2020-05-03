@@ -7,6 +7,8 @@ import hyperparameters as hp
 from lab_funcs import rgb_to_lab
 from sklearn.cluster import KMeans, MiniBatchKMeans
 import pickle
+from scipy.spatial.distance import cdist
+
 # from sklearn.neighbors import NearestNeighbors
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
@@ -26,10 +28,12 @@ class Datasets():
         self.std = np.ones((3,))
         self.calc_mean_and_std()
         self.quantize_colors()
-
+        
         # Setup data generators
         self.train_data = self.get_data(self.train_path, True)
         self.test_data = self.get_data(self.test_path, False)
+        example_img = self.process_path('data/test/cocobackground.jpg', split=False)
+        self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
 
     '''
     This is the first step in getting a loss function that accounts for color rarity.
@@ -43,40 +47,40 @@ class Datasets():
 
     '''
     def quantize_colors(self):
-        # Get list of all images in training directory
-        file_list = []
-        for root, _, files in os.walk(self.train_path):
-            for name in files:
-                if name.endswith("jpg") or name.endswith("jpeg") or name.endswith("png"):
-                    file_list.append(os.path.join(root, name))
-
-        # Shuffle filepaths
-        random.shuffle(file_list)
-
-        # Take sample of file paths 
-        file_list = file_list[:500]
-
-        # Randomly choose 1000 ab values from the input images
-        rand_abs = np.zeros((1000, 2))
-
-        # Import images
-        for i, file_path in enumerate(file_list):
-            img = tf.io.read_file(file_path)
-            # img now in LAB
-            img = self.convert_img(img)
-            # get img to just Ab
-            ab_image = self.lab_img_to_ab(img)
-            # pick two random pixels
-            rand_abs[i*2] = ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy()
-            rand_abs[i*2+1] = ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy()
-            
-        
-        if not os.path.isfile('qcolors_cc.pkl'):
+        if os.path.isfile('qcolors_cc.pkl'):
             # Q colors are the cluster centers 
-            cc = self.gen_q_cc(rand_abs)
-        else:
             cc = pickle.load(open("qcolors_cc.pkl", "rb"))
+            
+        else:
+            # Get list of all images in training directory
+            file_list = []
+            for root, _, files in os.walk(self.train_path):
+                for name in files:
+                    if name.endswith("jpg") or name.endswith("jpeg") or name.endswith("png"):
+                        file_list.append(os.path.join(root, name))
 
+            # Shuffle filepaths
+            random.shuffle(file_list)
+
+            # Take sample of file paths 
+            file_list = file_list[:500]
+
+            # Randomly choose 1000 ab values from the input images
+            rand_abs = np.zeros((1000, 2))
+
+            # Import images
+            for i, file_path in enumerate(file_list):
+                img = tf.io.read_file(file_path)
+                # img now in LAB
+                img = self.convert_img(img)
+                # get img to just Ab
+                ab_image = self.lab_img_to_ab(img)
+                # pick two random pixels
+                rand_abs[i*2] = ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy()
+                rand_abs[i*2+1] = ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy()
+
+            cc = self.gen_q_cc(rand_abs)   
+        
         # Get Q colors for all training images
         # v: get empirical probability of colors in the quantized ab space
         # training_ims_q_colors = kmeans.predict(ab_colors_arr[:1000])
@@ -106,7 +110,7 @@ class Datasets():
 
         # this is the index of the closest
         abs_reshaped = tf.reshape(ab_img[::4, ::4, :], (-1,2))
-        dists, closest_qs = self.nearest_neighbours(abs_reshaped, self.cc, hp.n_neighbours);
+        dists, closest_qs = self.nearest_neighbours(abs_reshaped, self.cc, hp.n_neighbours)
 
         # weight the dists using Gaussian kernel sigma = 5
         # got these 2 lines from /colorization/resources/caffe_traininglayers.py
@@ -121,7 +125,25 @@ class Datasets():
             tf.zeros((abs_reshaped.shape[0], 313)), indices, tf.reshape(wts, [-1]))
 
     def nearest_neighbours(self, points, centers, k):
-        return tf.ones((points.shape[0], k)), tf.ones((points.shape[0], k), int64)
+        cents = tf.cast(centers, tf.float32)
+        # adapted from https://gist.github.com/mbsariyildiz/34cdc26afb630e8cae079048eef91865
+        
+        p_x = tf.reshape(points[:,0], (-1,1))
+        p_y = tf.reshape(points[:,1], (-1,1))
+        c_x = tf.reshape(cents[:,0], (-1,1))
+        c_y = tf.reshape(cents[:,1], (-1,1))
+        
+        p_x2 = tf.reshape(tf.square(p_x), (-1,1))
+        p_y2 = tf.reshape(tf.square(p_y), (-1,1))
+        c_x2 = tf.reshape(tf.square(c_x), (1,-1))
+        c_y2 = tf.reshape(tf.square(c_y), (1,-1))
+
+        dist_px_cx = p_x2 + c_x2 - 2*tf.matmul(p_x, c_x, False, True)
+        dist_py_cy = p_y2 + c_y2 - 2*tf.matmul(p_y, c_y, False, True)
+
+        dist = tf.sqrt(dist_px_cx + dist_py_cy)
+        dists, inds = tf.nn.top_k(dists, 5)
+        return dists, tf.cast(inds, tf.int64)
     '''
     Goes from Z hat (58x58x313) to Y hat (58x58x2)
     Gets the annealed mean or mode.
