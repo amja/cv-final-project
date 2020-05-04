@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import int64
 import hyperparameters as hp
-from lab_funcs import rgb_to_lab
+from lab_funcs import rgb_to_lab, lab_to_rgb
 from sklearn.cluster import KMeans, MiniBatchKMeans
 import pickle
 from scipy.spatial.distance import cdist
@@ -28,13 +28,22 @@ class Datasets():
         self.calc_mean_and_std()
         self.quantize_colors()
         
+        # self.test_pipeline(data_path + "/train/n01440764/n01440764_188.JPEG")
+
         # Setup data generators
         self.train_data = self.get_data(self.train_path, True)
         self.test_data = self.get_data(self.test_path, False)
-        # example_img = self.process_path('data/test/cocobackground.jpg', split=False)
-        # self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
-        
-        # self.get_img_ab_from_q_color(tf.cast(tf.reshape(tf.range(58*58*313), (58, 58, 313)), tf.float32))
+
+    def test_pipeline(self, path):
+        self.init_q_conversion()
+        l, q = self.process_path(path)
+
+        ab = tf.reshape(self.get_img_ab_from_q_color(q), [hp.img_size // 4, hp.img_size // 4, 2])
+        # Upscale ab to img_size
+        ab = tf.image.resize(ab, [hp.img_size, hp.img_size], method="bicubic")
+        # Reverse standardisation
+        lab = tf.concat([l, ab], axis=2) * self.std + self.mean
+        return lab_to_rgb(lab)
 
     '''
     This is the first step in getting a loss function that accounts for color rarity.
@@ -57,7 +66,8 @@ class Datasets():
             file_list = []
             for root, _, files in os.walk(self.train_path):
                 for name in files:
-                    if name.endswith("jpg") or name.endswith("jpeg") or name.endswith("png"):
+                    down = name.lower()
+                    if down.endswith("jpg") or down.endswith("jpeg") or down.endswith("png"):
                         file_list.append(os.path.join(root, name))
 
             # Shuffle filepaths
@@ -117,14 +127,16 @@ class Datasets():
         # got these 2 lines from /colorization/resources/caffe_traininglayers.py
         wts = tf.exp(-dists**2/(2*5**2))
         wts = wts/tf.math.reduce_sum(wts,axis=1)[:,tf.newaxis]
-        print("SHAPE: {}".format(tf.reshape(closest_qs, [-1, 1]).shape))
-        print("indices: {}".format(self.q_indices.shape))
         indices = tf.concat([self.q_indices, tf.reshape(closest_qs, [-1, 1])], axis=1)
     
         # Add weights to appropriate positions
         return tf.tensor_scatter_nd_add(
             tf.zeros((abs_reshaped.shape[0], 313)), indices, tf.reshape(wts, [-1]))
 
+    '''
+    A tensorflow implementation of nearest neighbours to be used when computing ground truth
+    data for the loss function.
+    '''
     def nearest_neighbours(self, points, centers, k):
         cents = tf.cast(centers, tf.float32)
         # adapted from https://gist.github.com/mbsariyildiz/34cdc26afb630e8cae079048eef91865
@@ -143,8 +155,9 @@ class Datasets():
         dist_py_cy = p_y2 + c_y2 - 2*tf.matmul(p_y, c_y, False, True)
 
         dist = tf.sqrt(dist_px_cx + dist_py_cy)
-        dists, inds = tf.nn.top_k(dist, 5)
-        return dists, tf.cast(inds, tf.int64)
+        dists, inds = tf.nn.top_k(-dist, 5)
+        return -dists, tf.cast(inds, tf.int64)
+
     '''
     Goes from Z hat (58x58x313) to Y hat (58x58x2)
     Gets the annealed mean or mode.
@@ -155,34 +168,33 @@ class Datasets():
     def get_img_ab_from_q_color(self, q_img):
         temp = 0.38
         # not sure what to do with mean 
-        nom = tf.math.exp(tf.math.log(q_img)/temp)
-        denom = tf.expand_dims(tf.reduce_sum(tf.math.log(q_img)/temp, 2), 2)
-        f = nom/denom
-        mean = tf.reduce_mean(f, 2)
+        # nom = tf.math.exp(tf.math.log(q_img)/temp)
+        # denom = tf.expand_dims(tf.reduce_sum(tf.math.log(q_img)/temp, 2), 2)
+        # f = nom/denom
+        # mean = tf.reduce_mean(f, 2)
         # instead I will take the mode for now 
-        inds = tf.math.argmax(q_img,2)
-        ab_img = self.cc[tf.math.argmax(q_img,2)]
+        # inds = tf.math.argmax(q_img,1)
+        ab_img = self.cc[tf.math.argmax(q_img,1)]
         
         return ab_img
     
+
     def calc_mean_and_std(self):
         # Get list of all images in training directory
         file_list = []
         for root, _, files in os.walk(self.train_path):
             for name in files:
-                if name.endswith("jpg") or name.endswith("jpeg") or name.endswith("png"):
+                down = name.lower()
+                if down.endswith("jpg") or down.endswith("jpeg") or down.endswith("png"):
                     file_list.append(os.path.join(root, name))
 
         # Shuffle filepaths
         random.shuffle(file_list)
-
         # Take sample of file paths
         file_list = file_list[:hp.preprocess_sample_size]
-
         # Allocate space in memory for images
         data_sample = np.zeros(
             (hp.preprocess_sample_size, hp.img_size, hp.img_size, 3))
-
         # Import images
         for i, file_path in enumerate(file_list):
             img = self.process_path(file_path, False, quantise=False)
@@ -193,7 +205,6 @@ class Datasets():
 
         print("Dataset mean: [{0:.4f}, {1:.4f}, {2:.4f}]".format(
             self.mean[0], self.mean[1], self.mean[2]))
-
         print("Dataset std: [{0:.4f}, {1:.4f}, {2:.4f}]".format(
             self.std[0], self.std[1], self.std[2]))
 
@@ -230,7 +241,7 @@ class Datasets():
 
     def get_data(self, path, shuffle):
         # Approach informed by https://www.tensorflow.org/tutorials/load_data/images
-        imgs = tf.data.Dataset.list_files([path + "/*.jpg", path + "/*.jpeg", path + "/*.png"])
+        imgs = tf.data.Dataset.list_files([path + "/*/*.JPEG", path + "/*/*.jpg", path + "/*/*.jpeg", path + "/*/*.png"])
         self.init_q_conversion()
         cnn_ds = imgs.map(self.process_path, num_parallel_calls=AUTOTUNE)
         cnn_ds = cnn_ds.cache("tf_cache")

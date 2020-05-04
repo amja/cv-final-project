@@ -26,9 +26,9 @@ def train(model, dataset):
         x=dataset.train_data,
         validation_data=dataset.test_data,
         epochs=hp.num_epochs,
-        steps_per_epoch=hp.steps_per_epoch,
         # batch_size=hp.batch_size,
         callbacks=[],
+        verbose=1
     )
     if load_checkpoint is not None:
         model.load_weights(load_checkpoint)
@@ -44,7 +44,7 @@ def test(model, dataset):
     )
 
 def main():
-    datasets = Datasets("data")
+    datasets = Datasets("data/imagenet")
     model = Model()
     model(tf.keras.Input(shape=(hp.img_size, hp.img_size, 1)))
     model.summary()

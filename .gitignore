@@ -2,3 +2,5 @@
 data
 __pycache__
 tf_cache*
+qcolors_cc.pkl
+.vscode
