@@ -64,10 +64,10 @@ class Datasets():
             random.shuffle(file_list)
 
             # Take sample of file paths 
-            file_list = file_list[:500]
+            file_list = file_list[:int(hp.preprocess_sample_size/2)]
 
             # Randomly choose 1000 ab values from the input images
-            rand_abs = np.zeros((1000, 2))
+            rand_abs = np.zeros((hp.preprocess_sample_size, 2))
 
             # Import images
             for i, file_path in enumerate(file_list):
