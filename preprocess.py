@@ -2,7 +2,6 @@ import os
 import random
 import numpy as np
 import tensorflow as tf
-from tensorflow import int64
 import hyperparameters as hp
 from lab_funcs import rgb_to_lab, lab_to_rgb
 from sklearn.cluster import KMeans, MiniBatchKMeans
@@ -18,9 +17,11 @@ class Datasets():
     """
 
     def __init__(self, data_path):
+        assert(hp.img_size % 4 == 0)
         self.q_init = False
         self.train_path = os.path.join(data_path, "train")
         self.test_path = os.path.join(data_path, "test")
+        self.file_list = self.get_file_list()
 
         # Mean and std for standardization
         self.mean = np.zeros((3,))
@@ -31,8 +32,9 @@ class Datasets():
         # self.test_pipeline(data_path + "/train/n01440764/n01440764_188.JPEG")
 
         # Setup data generators
-        self.train_data = self.get_data(self.train_path, True)
-        self.test_data = self.get_data(self.test_path, False)
+        self.train_data = self.get_data(self.train_path)
+        self.test_data = self.get_data(self.test_path)
+        self.file_list = None
 
     def test_pipeline(self, path):
         self.init_q_conversion()
@@ -40,10 +42,20 @@ class Datasets():
 
         ab = tf.reshape(self.get_img_ab_from_q_color(q), [hp.img_size // 4, hp.img_size // 4, 2])
         # Upscale ab to img_size
-        ab = tf.image.resize(ab, [hp.img_size, hp.img_size], method="bicubic")
+        ab = tf.image.resize(ab * self.std + self.mean, [hp.img_size, hp.img_size], method="bicubic")
         # Reverse standardisation
-        lab = tf.concat([l, ab], axis=2) * self.std + self.mean
+        lab = tf.concat([l, ab], axis=2)
         return lab_to_rgb(lab)
+
+    def get_file_list(self):
+        file_list = []
+        for root, _, files in os.walk(self.train_path):
+            for name in files:
+                down = name.lower()
+                if down.endswith("jpg") or down.endswith("jpeg") or down.endswith("png"):
+                    file_list.append(os.path.join(root, name))
+        random.shuffle(file_list)
+        return file_list[:hp.preprocess_sample_size]
 
     '''
     This is the first step in getting a loss function that accounts for color rarity.
@@ -62,25 +74,11 @@ class Datasets():
             cc = pickle.load(open("qcolors_cc.pkl", "rb"))
             
         else:
-            # Get list of all images in training directory
-            file_list = []
-            for root, _, files in os.walk(self.train_path):
-                for name in files:
-                    down = name.lower()
-                    if down.endswith("jpg") or down.endswith("jpeg") or down.endswith("png"):
-                        file_list.append(os.path.join(root, name))
-
-            # Shuffle filepaths
-            random.shuffle(file_list)
-
-            # Take sample of file paths 
-            file_list = file_list[:int(hp.preprocess_sample_size/2)]
-
             # Randomly choose 1000 ab values from the input images
             rand_abs = np.zeros((hp.preprocess_sample_size, 2))
 
             # Import images
-            for i, file_path in enumerate(file_list):
+            for i, file_path in enumerate(self.file_list[:int(hp.preprocess_sample_size/2)]):
                 img = tf.io.read_file(file_path)
                 # img now in LAB
                 img = self.convert_img(img)
@@ -119,7 +117,7 @@ class Datasets():
             print("get_img_q_color_from_ab: Q conversion not initialised")
             exit(1)
 
-        # this is the index of the closest
+        # Downscale to 56x56 and reshape
         abs_reshaped = tf.reshape(ab_img[::4, ::4, :], (-1,2))
         dists, closest_qs = self.nearest_neighbours(abs_reshaped, self.cc, hp.n_neighbours)
 
@@ -155,8 +153,8 @@ class Datasets():
         dist_py_cy = p_y2 + c_y2 - 2*tf.matmul(p_y, c_y, False, True)
 
         dist = tf.sqrt(dist_px_cx + dist_py_cy)
-        dists, inds = tf.nn.top_k(-dist, 5)
-        return -dists, tf.cast(inds, tf.int64)
+        dists, inds = tf.nn.top_k(-dist, hp.n_neighbours)
+        return -dists, tf.cast(inds, tf.int32)
 
     '''
     Goes from Z hat (58x58x313) to Y hat (58x58x2)
@@ -180,23 +178,11 @@ class Datasets():
     
 
     def calc_mean_and_std(self):
-        # Get list of all images in training directory
-        file_list = []
-        for root, _, files in os.walk(self.train_path):
-            for name in files:
-                down = name.lower()
-                if down.endswith("jpg") or down.endswith("jpeg") or down.endswith("png"):
-                    file_list.append(os.path.join(root, name))
-
-        # Shuffle filepaths
-        random.shuffle(file_list)
-        # Take sample of file paths
-        file_list = file_list[:hp.preprocess_sample_size]
         # Allocate space in memory for images
         data_sample = np.zeros(
             (hp.preprocess_sample_size, hp.img_size, hp.img_size, 3))
         # Import images
-        for i, file_path in enumerate(file_list):
+        for i, file_path in enumerate(self.file_list):
             img = self.process_path(file_path, False, quantise=False)
             data_sample[i] = img
 
@@ -208,45 +194,38 @@ class Datasets():
         print("Dataset std: [{0:.4f}, {1:.4f}, {2:.4f}]".format(
             self.std[0], self.std[1], self.std[2]))
 
-    def standardize(self, img):
-        return (img - self.mean) / self.std
-
     def process_path(self, path, split=True, quantise=True):
         img = tf.io.read_file(path)
-        img = self.convert_img(img, True)
+        img = self.convert_img(img)
         if split:
             # Gets Q colours downsized if required.
             return (img[:,:,0:1], self.get_img_q_color_from_ab(img[:,:,1:3]) if quantise else img[:,:,1:3])
         else:
             return img
 
-    def convert_img(self, img, standardize=False):
-        img = tf.image.decode_image(img, channels=3, expand_animations=False)
-        img = tf.image.convert_image_dtype(img, tf.float32)
+    def convert_img(self, img, standardize=True):
+        img = tf.image.decode_image(img, channels=3, expand_animations=False, dtype="float32")
         img = tf.image.resize(img, [hp.img_size, hp.img_size])
         img = rgb_to_lab(img)        
-        return self.standardize(img) if standardize else img
+        return ((img - self.mean) / self.std) if standardize else img
 
     def lab_img_to_ab(self, lab_img):
         return lab_img[:,:,1:]
     
     def init_q_conversion(self):
         if not self.q_init:
-            assert(hp.img_size % 4 == 0)
-            scaled_size = hp.img_size // 4
             self.q_indices = tf.repeat(
-                tf.reshape(tf.range(scaled_size ** 2, dtype=int64), [-1, 1]), hp.n_neighbours, axis=0)
+                tf.reshape(tf.range((hp.img_size // 4) ** 2, dtype="int32"), [-1, 1]), hp.n_neighbours, axis=0)
+            
             self.cc = pickle.load(open("qcolors_cc.pkl", "rb"))
             self.q_init = True
 
-    def get_data(self, path, shuffle):
+    def get_data(self, path):
         # Approach informed by https://www.tensorflow.org/tutorials/load_data/images
         imgs = tf.data.Dataset.list_files([path + "/*/*.JPEG", path + "/*/*.jpg", path + "/*/*.jpeg", path + "/*/*.png"])
         self.init_q_conversion()
         cnn_ds = imgs.map(self.process_path, num_parallel_calls=AUTOTUNE)
         cnn_ds = cnn_ds.cache("tf_cache")
-        if shuffle:
-            cnn_ds = cnn_ds.shuffle(buffer_size=1000)
         # cnn_ds = cnn_ds.repeat()
         cnn_ds = cnn_ds.batch(hp.batch_size)
         cnn_ds = cnn_ds.prefetch(buffer_size=AUTOTUNE)
