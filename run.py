@@ -28,5 +28,5 @@ def main():
         optimizer=model.optimizer,
         loss=model.loss_fn)
     
-    # train(model, datasets)
+    train(model, datasets)
 main()

@@ -8,8 +8,7 @@ from lab_funcs import rgb_to_lab
 from sklearn.cluster import KMeans, MiniBatchKMeans
 import pickle
 from scipy.spatial.distance import cdist
-
-# from sklearn.neighbors import NearestNeighbors
+import numpy as np
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 class Datasets():
@@ -32,8 +31,10 @@ class Datasets():
         # Setup data generators
         self.train_data = self.get_data(self.train_path, True)
         self.test_data = self.get_data(self.test_path, False)
-        example_img = self.process_path('data/test/cocobackground.jpg', split=False)
-        self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
+        # example_img = self.process_path('data/test/cocobackground.jpg', split=False)
+        # self.get_img_q_color_from_ab(self.lab_img_to_ab(example_img))
+        
+        # self.get_img_ab_from_q_color(tf.cast(tf.reshape(tf.range(58*58*313), (58, 58, 313)), tf.float32))
 
     '''
     This is the first step in getting a loss function that accounts for color rarity.
@@ -142,17 +143,27 @@ class Datasets():
         dist_py_cy = p_y2 + c_y2 - 2*tf.matmul(p_y, c_y, False, True)
 
         dist = tf.sqrt(dist_px_cx + dist_py_cy)
-        dists, inds = tf.nn.top_k(dists, 5)
+        dists, inds = tf.nn.top_k(dist, 5)
         return dists, tf.cast(inds, tf.int64)
     '''
     Goes from Z hat (58x58x313) to Y hat (58x58x2)
     Gets the annealed mean or mode.
     See https://github.com/richzhang/colorization/blob/815b3f7808f8f2d9d683e9ed6c5b0a39bec232fb/colorization/demo/colorization_demo_v2.ipynb
     Then upscale from 58x58x2 to 224 x 224
+    After the neural network -> can use NP functions
     ''' 
     def get_img_ab_from_q_color(self, q_img):
-        # NOT DONE YET
-        return q_img
+        temp = 0.38
+        # not sure what to do with mean 
+        nom = tf.math.exp(tf.math.log(q_img)/temp)
+        denom = tf.expand_dims(tf.reduce_sum(tf.math.log(q_img)/temp, 2), 2)
+        f = nom/denom
+        mean = tf.reduce_mean(f, 2)
+        # instead I will take the mode for now 
+        inds = tf.math.argmax(q_img,2)
+        ab_img = self.cc[tf.math.argmax(q_img,2)]
+        
+        return ab_img
     
     def calc_mean_and_std(self):
         # Get list of all images in training directory
