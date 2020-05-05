@@ -166,13 +166,14 @@ class Datasets():
     def get_img_ab_from_q_color(self, q_img):
         temp = 0.38
         # not sure what to do with mean 
-        # nom = tf.math.exp(tf.math.log(q_img)/temp)
-        # denom = tf.expand_dims(tf.reduce_sum(tf.math.log(q_img)/temp, 2), 2)
-        # f = nom/denom
-        # mean = tf.reduce_mean(f, 2)
+        nom = tf.math.exp(tf.math.log(q_img)/temp)
+        denom = tf.expand_dims(tf.reduce_sum(tf.math.log(q_img)/temp, 2), 2)
+        f = nom/denom
+        mean = tf.reduce_mean(f, 2)
         # instead I will take the mode for now 
         # inds = tf.math.argmax(q_img,1)
-        ab_img = self.cc[tf.math.argmax(q_img,1)]
+        # ab_img = self.cc[tf.math.argmax(q_img,1)]
+        ab_img = self.cc[tf.math.argmin(tf.math.abs(f - mean))]
         
         return ab_img
     
