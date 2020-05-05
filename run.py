@@ -3,13 +3,13 @@ import tensorflow as tf
 from model import Model
 from preprocess import Datasets
 import hyperparameters as hp
-from functools import partial
 
 def train(model, dataset):
     model.fit(
         x=dataset.train_data,
         validation_data=dataset.test_data,
         epochs=hp.num_epochs,
+        shuffle=False,
         callbacks=[],
     )
 def test(model, dataset):

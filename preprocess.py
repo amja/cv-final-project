@@ -227,6 +227,7 @@ class Datasets():
         cnn_ds = imgs.map(self.process_path, num_parallel_calls=AUTOTUNE)
         cnn_ds = cnn_ds.cache("tf_cache")
         # cnn_ds = cnn_ds.repeat()
+        cnn_ds = cnn_ds.shuffle(buffer_size=1000)
         cnn_ds = cnn_ds.batch(hp.batch_size)
         cnn_ds = cnn_ds.prefetch(buffer_size=AUTOTUNE)
         return cnn_ds
