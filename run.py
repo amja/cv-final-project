@@ -4,6 +4,7 @@ from model import Model
 from preprocess import Datasets
 import hyperparameters as hp
 from functools import partial
+from our_tensorboard_utils import VisImageOutput
 
 def train(model, dataset):
     checkpoint_path = "./your_model_checkpoints/"		
@@ -16,7 +17,8 @@ def train(model, dataset):
         save_weights_only=True),		
         tf.keras.callbacks.TensorBoard(		
         update_freq='batch',		
-        profile_batch=0),		
+        profile_batch=0),
+        VisImageOutput(dataset)		
     ]
 
     model.fit(

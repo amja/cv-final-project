@@ -30,17 +30,18 @@ class Datasets():
         self.calc_mean_and_std()
         self.quantize_colors()
         
-        # self.test_pipeline(data_path + "/train/n01440764/n01440764_188.JPEG")
+        self.test_pipeline(data_path + "/train/Photos1/test.jpg")
 
         # Setup data generators
         self.train_data = self.get_data(self.train_path)
         self.test_data = self.get_data(self.test_path)
         self.file_list = None
-
+    
+    '''Network output back into RGB image '''
     def test_pipeline(self, path):
         self.init_q_conversion()
         l, q = self.process_path(path)
-
+        # FROM HERE -- OUTPUT TO RGB IMAGE
         ab = tf.reshape(self.get_img_ab_from_q_color(q), [hp.img_size // 4, hp.img_size // 4, 2])
         # Upscale ab to img_size
         ab = tf.image.resize(ab, [hp.img_size, hp.img_size], method="bicubic")
@@ -50,6 +51,20 @@ class Datasets():
         plt.imshow(rgb)
         plt.show()
         return rgb
+
+    '''Takes output in q colors to a rank-4 tensor of ab colors
+    q - 3136x313 output of our network
+    l - 224x224x1 lightness
+    '''
+    def model_output_to_tensorboard(self, l, q):
+        ab = tf.reshape(self.get_img_ab_from_q_color(q), [hp.img_size // 4, hp.img_size // 4, 2])
+        # Upscale ab to img_size
+        ab = tf.image.resize(ab, [hp.img_size, hp.img_size], method="bicubic")
+        # Reverse standardisation
+        lab = tf.concat([l, ab], axis=2) * self.std + self.mean
+        rgb = lab_to_rgb(lab)
+        reshaped = tf.reshape(rgb, (-1, 224, 224, 3))
+        return reshaped
 
     def get_file_list(self):
         file_list = []
