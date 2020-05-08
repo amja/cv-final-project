@@ -18,7 +18,7 @@ def train(model, dataset):
         tf.keras.callbacks.TensorBoard(		
         update_freq='batch',		
         profile_batch=0),
-        VisImageOutput(dataset)		
+        VisImageOutput(dataset.train_data)		
     ]
 
     model.fit(

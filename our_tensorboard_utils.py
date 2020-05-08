@@ -8,9 +8,9 @@ import hyperparameters as hp
 import preprocess as pp
 
 class VisImageOutput(tf.keras.callbacks.Callback):
-    def __init__(self, datasets):
+    def __init__(self, train_data):
         super(VisImageOutput, self).__init__()
-        self.datasets = datasets
+        self.train_data = train_data
 
         print("Done setting up image labeling logger.")
     
