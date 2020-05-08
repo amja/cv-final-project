@@ -30,7 +30,7 @@ class Datasets():
         self.calc_mean_and_std()
         self.quantize_colors()
         
-        self.test_pipeline(data_path + "/train/Photos1/test.jpg")
+        # self.test_pipeline(data_path + "/train/Photos1/test.jpg")
 
         # Setup data generators
         self.train_data = self.get_data(self.train_path)
