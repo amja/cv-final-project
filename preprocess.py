@@ -36,6 +36,7 @@ class Datasets():
         self.train_data = self.get_data(self.train_path)
         self.test_data = self.get_data(self.test_path)
         self.file_list = None
+
     
     '''Network output back into RGB image '''
     def test_pipeline(self, path):

@@ -6,6 +6,7 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 import hyperparameters as hp
 import preprocess as pp
+import gc
 
 class VisImageOutput(tf.keras.callbacks.Callback):
     def __init__(self, train_data):
@@ -20,9 +21,13 @@ class VisImageOutput(tf.keras.callbacks.Callback):
         self.log_image_progress(epoch, logs)
     
     def log_image_progress(self, epoch_num, logs):
-        batches = [batch for batch in self.train_data]
         # 224 x 224 x 1
-        test_img_l = batches[0][0][0]
+        test_img_l = tf.zeros((224, 224, 1), tf.float32)
+        for batch in self.train_data:
+            for b in batch:
+                for c in b:
+                    test_img_l = c
+                    break
         img3136by313 = self.model(test_img_l)
         imgrank4 = pp.model_output_to_tensorboard(img3136by313)
 
@@ -35,3 +40,5 @@ class VisImageOutput(tf.keras.callbacks.Callback):
         # Using the file writer, log the reshaped image.
         with file_writer.as_default():
             tf.summary.image("Image Progress!", imgrank4, step=epoch_num)
+        
+        gc.collect()
