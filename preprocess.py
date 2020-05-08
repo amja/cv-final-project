@@ -8,6 +8,7 @@ from sklearn.cluster import KMeans, MiniBatchKMeans
 import pickle
 from scipy.spatial.distance import cdist
 import numpy as np
+from matplotlib import pyplot as plt
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 class Datasets():
@@ -42,10 +43,13 @@ class Datasets():
 
         ab = tf.reshape(self.get_img_ab_from_q_color(q), [hp.img_size // 4, hp.img_size // 4, 2])
         # Upscale ab to img_size
-        ab = tf.image.resize(ab * self.std + self.mean, [hp.img_size, hp.img_size], method="bicubic")
+        ab = tf.image.resize(ab, [hp.img_size, hp.img_size], method="bicubic")
         # Reverse standardisation
-        lab = tf.concat([l, ab], axis=2)
-        return lab_to_rgb(lab)
+        lab = tf.concat([l, ab], axis=2) * self.std + self.mean
+        rgb = lab_to_rgb(lab)
+        plt.imshow(rgb)
+        plt.show()
+        return rgb
 
     def get_file_list(self):
         file_list = []
@@ -167,13 +171,14 @@ class Datasets():
         temp = 0.38
         # not sure what to do with mean 
         nom = tf.math.exp(tf.math.log(q_img)/temp)
-        denom = tf.expand_dims(tf.reduce_sum(tf.math.log(q_img)/temp, 2), 2)
+        denom = tf.reshape(tf.tile(tf.reduce_sum(tf.math.log(tf.reshape(q_img[q_img != 0], [-1, 5]))/temp, 1), [313]), [-1, 313])
         f = nom/denom
-        mean = tf.reduce_mean(f, 2)
+        mean = tf.reduce_mean(f, 1)
+
         # instead I will take the mode for now 
         # inds = tf.math.argmax(q_img,1)
         # ab_img = self.cc[tf.math.argmax(q_img,1)]
-        ab_img = self.cc[tf.math.argmin(tf.math.abs(f - mean))]
+        ab_img = self.cc[tf.expand_dims(tf.math.argmin(tf.math.abs(f - tf.reshape(tf.tile(mean, [313]), [-1, 313])), axis=1), 1)]
         
         return ab_img
     
@@ -226,7 +231,7 @@ class Datasets():
         imgs = tf.data.Dataset.list_files([path + "/*/*.JPEG", path + "/*/*.jpg", path + "/*/*.jpeg", path + "/*/*.png"])
         self.init_q_conversion()
         cnn_ds = imgs.map(self.process_path, num_parallel_calls=AUTOTUNE)
-        cnn_ds = cnn_ds.cache("tf_cache")
+        # cnn_ds = cnn_ds.cache("tf_cache")
         # cnn_ds = cnn_ds.repeat()
         cnn_ds = cnn_ds.batch(hp.batch_size)
         cnn_ds = cnn_ds.prefetch(buffer_size=AUTOTUNE)
