@@ -27,7 +27,10 @@ class VisImageOutput(tf.keras.callbacks.Callback):
         imgrank4 = pp.model_output_to_tensorboard(img3136by313)
 
         # Creates a file writer for the log directory.
-        file_writer = tf.summary.create_file_writer('logs/image_progress')
+        log_path = './logs/image_progress'
+        if not os.path.exists(log_path):
+            os.makedirs(log_path)
+        file_writer = tf.summary.create_file_writer(log_path)
     
         # Using the file writer, log the reshaped image.
         with file_writer.as_default():
