@@ -20,6 +20,8 @@ class Datasets():
     def __init__(self, data_path):
         assert(hp.img_size % 4 == 0)
         self.q_init = False
+
+        
         self.train_path = os.path.join(data_path, "train")
         self.test_path = os.path.join(data_path, "test")
         self.file_list = self.get_file_list()
@@ -30,8 +32,8 @@ class Datasets():
         self.calc_mean_and_std()
         self.quantize_colors()
         
+        
         # self.test_pipeline(data_path + "/train/Photos1/test.jpg")
-
         # Setup data generators
         self.train_data = self.get_data(self.train_path)
         self.test_data = self.get_data(self.test_path)
@@ -94,11 +96,12 @@ class Datasets():
             cc = pickle.load(open("qcolors_cc.pkl", "rb"))
             
         else:
-            # Randomly choose 1000 ab values from the input images
-            rand_abs = np.zeros((hp.preprocess_sample_size, 2))
+            # Randomly choose 400*2 ab values from the input images
+            num_samples = 50000
+            rand_abs = np.zeros((num_samples, 2))
 
             # Import images
-            for i, file_path in enumerate(self.file_list[:int(hp.preprocess_sample_size/2)]):
+            for i, file_path in enumerate(self.file_list[:int(num_samples/2)]):
                 img = tf.io.read_file(file_path)
                 # img now in LAB
                 img = self.convert_img(img)
@@ -124,7 +127,7 @@ class Datasets():
     ''' From available images generate 313 cluster centers of ab colors'''
     def gen_q_cc(self, ab_colors):
         print('Generating q colors through kmeans!')
-        kmeans = MiniBatchKMeans(n_clusters=313, init_size=313, max_iter=100).fit(ab_colors)
+        kmeans = MiniBatchKMeans(n_clusters=313, init_size=313, max_iter=300).fit(ab_colors)
         pickle.dump(kmeans.cluster_centers_, open("qcolors_cc.pkl", "wb"))
         print('...Done.')
         return kmeans
