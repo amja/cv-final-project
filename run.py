@@ -6,11 +6,24 @@ import hyperparameters as hp
 from functools import partial
 
 def train(model, dataset):
+    checkpoint_path = "./your_model_checkpoints/"		
+    load_checkpoint = None		
+
+    callback_list = [		
+        tf.keras.callbacks.ModelCheckpoint(		
+        filepath=checkpoint_path + "weights.e{epoch:02d}-",		
+        save_best_only=True,		
+        save_weights_only=True),		
+        tf.keras.callbacks.TensorBoard(		
+        update_freq='batch',		
+        profile_batch=0),		
+    ]
+
     model.fit(
         x=dataset.train_data,
         validation_data=dataset.test_data,
         epochs=hp.num_epochs,
-        callbacks=[],
+        callbacks=callback_list,
     )
 def test(model, dataset):
     model.evaluate(
