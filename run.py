@@ -18,7 +18,7 @@ def train(model, dataset):
         tf.keras.callbacks.TensorBoard(		
         update_freq='batch',		
         profile_batch=0),
-        VisImageOutput(dataset.train_data)		
+        VisImageOutput(dataset)		
     ]
 
     model.fit(
@@ -34,7 +34,7 @@ def test(model, dataset):
     )
 
 def main():
-    datasets = Datasets("data/imagenet")
+    datasets = Datasets("data/imagenet_small")
     model = Model()
     model(tf.keras.Input(shape=(hp.img_size, hp.img_size, 1)))
     model.summary()

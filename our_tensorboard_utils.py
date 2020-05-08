@@ -5,14 +5,14 @@ import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
 import hyperparameters as hp
-import preprocess as pp
+# from preprocess as pp
 import gc
 
 class VisImageOutput(tf.keras.callbacks.Callback):
-    def __init__(self, train_data):
+    def __init__(self, dataset):
         super(VisImageOutput, self).__init__()
-        self.train_data = train_data
-
+        self.train_data = dataset.train_data
+        self.dataset = dataset
         print("Done setting up image labeling logger.")
     
     # At the end of each epoch, visualize the current 
@@ -22,15 +22,12 @@ class VisImageOutput(tf.keras.callbacks.Callback):
     
     def log_image_progress(self, epoch_num, logs):
         # 224 x 224 x 1
-        test_img_l = tf.zeros((224, 224, 1), tf.float32)
-        for batch in self.train_data:
-            for b in batch:
-                for c in b:
-                    test_img_l = c
-                    break
-        img3136by313 = self.model(test_img_l)
-        imgrank4 = pp.model_output_to_tensorboard(img3136by313)
-
+        img = self.train_data.take(1).as_numpy_iterator().next()
+        test_img_l = img[0][0]
+        img3136by313 = tf.squeeze(self.model(tf.expand_dims(test_img_l, 0)))
+        rgb_trained = self.dataset.model_output_to_tensorboard(test_img_l, img3136by313)
+        rgb_truth = self.dataset.model_output_to_tensorboard(test_img_l, img[1][0])
+        imgrank4 = tf.expand_dims(tf.concat([rgb_truth, rgb_trained], axis=1), 0)
         # Creates a file writer for the log directory.
         log_path = './logs/image_progress'
         if not os.path.exists(log_path):

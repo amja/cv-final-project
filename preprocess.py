@@ -30,7 +30,7 @@ class Datasets():
         self.mean = np.zeros((3,))
         self.std = np.ones((3,))
         self.calc_mean_and_std()
-        self.quantize_colors()
+        self.cc = self.quantize_colors()
         
         
         # self.test_pipeline(data_path + "/train/Photos1/test.jpg")
@@ -66,8 +66,8 @@ class Datasets():
         # Reverse standardisation
         lab = tf.concat([l, ab], axis=2) * self.std + self.mean
         rgb = lab_to_rgb(lab)
-        reshaped = tf.reshape(rgb, (-1, 224, 224, 3))
-        return reshaped
+        # reshaped = tf.reshape(rgb, (-1, 224, 224, 3))
+        return rgb
 
     def get_file_list(self):
         file_list = []
@@ -241,8 +241,6 @@ class Datasets():
         if not self.q_init:
             self.q_indices = tf.repeat(
                 tf.reshape(tf.range((hp.img_size // 4) ** 2, dtype="int32"), [-1, 1]), hp.n_neighbours, axis=0)
-            
-            self.cc = pickle.load(open("qcolors_cc.pkl", "rb"))
             self.q_init = True
 
     def get_data(self, path):
