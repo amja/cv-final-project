@@ -33,7 +33,7 @@ class Datasets():
         self.cc = self.quantize_colors()
         
         
-        # self.test_pipeline(data_path + "/train/Photos1/test.jpg")
+        # self.test_pipeline(data_path + "/train/n04008634/n04008634_25606.JPEG")
         # Setup data generators
         self.train_data = self.get_data(self.train_path)
         self.test_data = self.get_data(self.test_path)
@@ -77,7 +77,7 @@ class Datasets():
                 if down.endswith("jpg") or down.endswith("jpeg") or down.endswith("png"):
                     file_list.append(os.path.join(root, name))
         random.shuffle(file_list)
-        return file_list[:hp.preprocess_sample_size]
+        return file_list
 
     '''
     This is the first step in getting a loss function that accounts for color rarity.
@@ -96,8 +96,8 @@ class Datasets():
             cc = pickle.load(open("qcolors_cc.pkl", "rb"))
             
         else:
-            # Randomly choose 400*2 ab values from the input images
-            num_samples = 50000
+            # Randomly choose 5000*2 ab values from the input images
+            num_samples = 5000
             rand_abs = np.zeros((num_samples, 2))
 
             # Import images
@@ -187,6 +187,7 @@ class Datasets():
     After the neural network -> can use NP functions
     ''' 
     def get_img_ab_from_q_color(self, q_img):
+        return self.cc[tf.math.argmax(q_img,1)]
         temp = 0.38
         # not sure what to do with mean 
         nom = tf.math.exp(tf.math.log(q_img)/temp)
@@ -207,7 +208,7 @@ class Datasets():
         data_sample = np.zeros(
             (hp.preprocess_sample_size, hp.img_size, hp.img_size, 3))
         # Import images
-        for i, file_path in enumerate(self.file_list):
+        for i, file_path in enumerate(self.file_list[:hp.preprocess_sample_size]):
             img = self.process_path(file_path, False, quantise=False)
             data_sample[i] = img
 
