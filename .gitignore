@@ -5,3 +5,4 @@ tf_cache*
 qcolors_cc.pkl
 .vscode
 logs
+your_model_checkpoints
