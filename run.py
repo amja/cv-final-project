@@ -34,7 +34,7 @@ def test(model, dataset):
     )
 
 def main():
-    datasets = Datasets("data/imagenet_small")
+    datasets = Datasets("data/imagenet")
     model = Model()
     model(tf.keras.Input(shape=(hp.img_size, hp.img_size, 1)))
     model.summary()
