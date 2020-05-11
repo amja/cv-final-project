@@ -34,6 +34,7 @@ class Datasets():
         
         
         # self.test_pipeline(data_path + "/train/n04008634/n04008634_25606.JPEG")
+        # self.test_pipeline(data_path + "/train/Photos1/testy4.jpg")
         # Setup data generators
         self.train_data = self.get_data(self.train_path)
         self.test_data = self.get_data(self.test_path)
@@ -44,7 +45,6 @@ class Datasets():
     def test_pipeline(self, path):
         self.init_q_conversion()
         l, q = self.process_path(path)
-        # FROM HERE -- OUTPUT TO RGB IMAGE
         ab = tf.reshape(self.get_img_ab_from_q_color(q), [hp.img_size // 4, hp.img_size // 4, 2])
         # Upscale ab to img_size
         ab = tf.image.resize(ab, [hp.img_size, hp.img_size], method="bicubic")
@@ -96,10 +96,12 @@ class Datasets():
             cc = pickle.load(open("qcolors_cc.pkl", "rb"))
             
         else:
+            # CHANGE BACK TO 5000, ONLY DID THIS FOR SHORT VERSION
             # Randomly choose 5000*2 ab values from the input images
             num_samples = 5000
-            rand_abs = np.zeros((num_samples, 2))
-
+            # rand_abs = np.zeros((num_samples, 2))
+            pixels_per_im = 1
+            ab_list = []
             # Import images
             for i, file_path in enumerate(self.file_list[:int(num_samples/2)]):
                 img = tf.io.read_file(file_path)
@@ -108,9 +110,10 @@ class Datasets():
                 # get img to just Ab
                 ab_image = self.lab_img_to_ab(img)
                 # pick two random pixels
-                rand_abs[i*2] = ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy()
-                rand_abs[i*2+1] = ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy()
+                for j in range(pixels_per_im):
+                    ab_list.append(ab_image[random.randrange(0, hp.img_size)][random.randrange(0, hp.img_size)].numpy())
 
+            rand_abs = np.stack(ab_list)
             cc = self.gen_q_cc(rand_abs)   
         
         # Get Q colors for all training images
@@ -130,7 +133,7 @@ class Datasets():
         kmeans = MiniBatchKMeans(n_clusters=313, init_size=313, max_iter=300).fit(ab_colors)
         pickle.dump(kmeans.cluster_centers_, open("qcolors_cc.pkl", "wb"))
         print('...Done.')
-        return kmeans
+        return kmeans.cluster_centers_
 
     '''
     Goes from Y (224 x 224 x 2) to Z (56 x 56 x 313)
@@ -144,7 +147,7 @@ class Datasets():
         abs_reshaped = tf.reshape(ab_img[::4, ::4, :], (-1,2))
         dists, closest_qs = self.nearest_neighbours(abs_reshaped, self.cc, hp.n_neighbours)
 
-        # weight the dists using Gaussian kernel sigma = 5
+        # weight the dists using Gaussian kernel sigma = 5 
         # got these 2 lines from /colorization/resources/caffe_traininglayers.py
         wts = tf.exp(-dists**2/(2*5**2))
         wts = wts/tf.math.reduce_sum(wts,axis=1)[:,tf.newaxis]
@@ -187,38 +190,49 @@ class Datasets():
     After the neural network -> can use NP functions
     ''' 
     def get_img_ab_from_q_color(self, q_img):
-        return self.cc[tf.math.argmax(q_img,1)]
+        # return self.cc[tf.math.argmax(q_img,1)]
         temp = 0.38
-        # not sure what to do with mean 
+        # annealed 
         nom = tf.math.exp(tf.math.log(q_img)/temp)
-        denom = tf.reshape(tf.tile(tf.reduce_sum(tf.math.log(tf.reshape(q_img[q_img != 0], [-1, 5]))/temp, 1), [313]), [-1, 313])
+        denom = tf.reshape(tf.tile(tf.reduce_sum(tf.math.exp(tf.math.log(tf.reshape(q_img[q_img != 0], [-1, 5])/temp)), 1), [313]), [-1, 313])
         f = nom/denom
-        mean = tf.reduce_mean(f, 1)
+        
+        # WORKS!!!
+        mean = tf.reduce_mean(tf.reshape(q_img[q_img != 0], (-1,5)), 1)
+        # ab_img = self.cc[tf.expand_dims(tf.math.argmin(tf.math.abs(q_img - tf.reshape(tf.tile(mean, [313]), [-1, 313])), axis=1), 1)]
 
-        # instead I will take the mode for now 
-        # inds = tf.math.argmax(q_img,1)
-        # ab_img = self.cc[tf.math.argmax(q_img,1)]
         ab_img = self.cc[tf.expand_dims(tf.math.argmin(tf.math.abs(f - tf.reshape(tf.tile(mean, [313]), [-1, 313])), axis=1), 1)]
         
         return ab_img
     
 
     def calc_mean_and_std(self):
-        # Allocate space in memory for images
-        data_sample = np.zeros(
-            (hp.preprocess_sample_size, hp.img_size, hp.img_size, 3))
-        # Import images
-        for i, file_path in enumerate(self.file_list[:hp.preprocess_sample_size]):
-            img = self.process_path(file_path, False, quantise=False)
-            data_sample[i] = img
+        # just for testing!
+        if os.path.isfile('mean.pkl'):
+            # Q colors are the cluster centers 
+            self.mean = pickle.load(open("mean.pkl", "rb"))  
+            self.std = pickle.load(open("std.pkl", "rb"))  
+        else:
+            # Allocate space in memory for images
+            data_sample = np.zeros(
+                (hp.preprocess_sample_size, hp.img_size, hp.img_size, 3))
+            # Import images
+            for i, file_path in enumerate(self.file_list[:hp.preprocess_sample_size]):
+                img = self.process_path(file_path, False, quantise=False)
+                data_sample[i] = img
 
-        self.mean = np.mean(data_sample, axis=(0,1,2))
-        self.std = np.std(data_sample, axis=(0,1,2))
+            self.mean = np.mean(data_sample, axis=(0,1,2))
+            self.std = np.std(data_sample, axis=(0,1,2))
 
-        print("Dataset mean: [{0:.4f}, {1:.4f}, {2:.4f}]".format(
-            self.mean[0], self.mean[1], self.mean[2]))
-        print("Dataset std: [{0:.4f}, {1:.4f}, {2:.4f}]".format(
-            self.std[0], self.std[1], self.std[2]))
+            print("Dataset mean: [{0:.4f}, {1:.4f}, {2:.4f}]".format(
+                self.mean[0], self.mean[1], self.mean[2]))
+            print("Dataset std: [{0:.4f}, {1:.4f}, {2:.4f}]".format(
+                self.std[0], self.std[1], self.std[2]))
+            
+            # delete later, just for testing!
+            pickle.dump(self.mean, open("mean.pkl", "wb"))
+            pickle.dump(self.std, open("std.pkl", "wb"))
+            
 
     def process_path(self, path, split=True, quantise=True):
         img = tf.io.read_file(path)
