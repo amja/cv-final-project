@@ -100,7 +100,7 @@ class Datasets():
             # Randomly choose 5000*2 ab values from the input images
             num_samples = 5000
             # rand_abs = np.zeros((num_samples, 2))
-            pixels_per_im = 1
+            pixels_per_im = 3
             ab_list = []
             # Import images
             for i, file_path in enumerate(self.file_list[:int(num_samples/2)]):
@@ -194,11 +194,11 @@ class Datasets():
         temp = 0.38
         # annealed 
         nom = tf.math.exp(tf.math.log(q_img)/temp)
-        denom = tf.reshape(tf.tile(tf.reduce_sum(tf.math.exp(tf.math.log(tf.reshape(q_img[q_img != 0], [-1, 5])/temp)), 1), [313]), [-1, 313])
+        denom = tf.reshape(tf.tile(tf.reduce_sum(tf.math.exp(tf.math.log(tf.reshape(tf.math.top_k(q_img,5)[0], [-1, 5])/temp)), 1), [313]), [-1, 313])
         f = nom/denom
         
         # WORKS!!!
-        mean = tf.reduce_mean(tf.reshape(q_img[q_img != 0], (-1,5)), 1)
+        mean = tf.reduce_mean(tf.reshape(tf.math.top_k(q_img,5)[0], (-1,5)), 1)
         # ab_img = self.cc[tf.expand_dims(tf.math.argmin(tf.math.abs(q_img - tf.reshape(tf.tile(mean, [313]), [-1, 313])), axis=1), 1)]
 
         ab_img = self.cc[tf.expand_dims(tf.math.argmin(tf.math.abs(f - tf.reshape(tf.tile(mean, [313]), [-1, 313])), axis=1), 1)]
