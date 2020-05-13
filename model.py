@@ -1,8 +1,9 @@
 import tensorflow as tf
 import hyperparameters as hp
 from tensorflow.keras.layers import \
-        Conv2D, Cropping2D, MaxPool2D, Dropout, Flatten, Dense, ZeroPadding2D, \
-        BatchNormalization, Conv2DTranspose, Reshape, Softmax
+    Conv2D, Cropping2D, MaxPool2D, Dropout, Flatten, Dense, ZeroPadding2D, \
+    BatchNormalization, Conv2DTranspose, Reshape, Softmax
+
 
 class Model(tf.keras.Model):
     def __init__(self):
@@ -42,9 +43,9 @@ class Model(tf.keras.Model):
 
             # Conv4
             # dilation is spaces between the values in the kernel
-            # dilation 1 is the same but I left this in to emphasize differnce
+            # dilation 1 is the same but I left this in to emphasize difference
             # 3 x 3 kernel with dilation 2 will have same field of view as
-            # 5 x 5 kernel 
+            # 5 x 5 kernel
             ZeroPadding2D(padding=1),
             Conv2D(filters=512, kernel_size=3, dilation_rate=1, activation='relu', name="conv4_1"),
             ZeroPadding2D(padding=1),
@@ -82,8 +83,6 @@ class Model(tf.keras.Model):
 
             # Conv8
             # should have dimension 256 x 64 x 64
-            # NEEDS UPSAMPLING -- using transpose, aka Deconvolution
-            # ZeroPadding2D(padding=1),
             Conv2DTranspose(filters=256, kernel_size=4, dilation_rate=1, strides=2, activation='relu', name="conv8_1"),
             Cropping2D(1),
             ZeroPadding2D(padding=1),
@@ -95,15 +94,10 @@ class Model(tf.keras.Model):
             # this is the (a,b) distribution
             Conv2D(filters=313, kernel_size=1, dilation_rate=1, activation='relu'),
 
-            # REBALANCE LAYER
-
-            # SOFTMAX
-            # alternatively activation=tf.nn.softmax
-            # if we can figure out from rebalance layer
             Softmax(),
             Reshape((56 ** 2, 313))
         ]
-    
+
     def call(self, img):
         for layer in self.architecture:
             img = layer(img)
@@ -111,7 +105,6 @@ class Model(tf.keras.Model):
 
     @staticmethod
     def loss_fn(truth, prediction):
-        # print("SHAPE: {}".format(truth.shape))
-        # print("Predict SHAPE: {}".format(prediction.shape))
+        # Since our problem is categorisation, we use this loss function.
         return tf.keras.losses.categorical_crossentropy(
             truth, prediction, from_logits=False)
